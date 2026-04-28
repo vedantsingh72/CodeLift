@@ -1,0 +1,3 @@
+http ko app paas karte hain -- matlab ki http ko request/ressponse handler chahiye
+
+jab http se server ban jata hain to ush server kohum websocket ko paas karte hain
