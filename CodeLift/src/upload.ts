@@ -3,11 +3,12 @@ import fs from "fs";
 import dotenv from "dotenv";
 dotenv.config();
 const { S3 } = pkg;
+
 const s3 = new S3({
-  endpoint: "https://s3.us-east-005.backblazeb2.com",
-  accessKeyId: "00587b6d5335dd00000000002",
-  secretAccessKey: "K005Gm5Ral7POSvrStAHUFpMgeoBeOs",
-  region: "us-east-005",
+  endpoint: process.env.S3_ENDPOINT!,
+  accessKeyId: process.env.S3_ACCESS_KEY!,
+  secretAccessKey: process.env.S3_SECRET_KEY!,
+  region: process.env.S3_REGION!,
   signatureVersion: "v4",
   s3ForcePathStyle: true
 });
@@ -28,5 +29,6 @@ export const uploadFile = async (
     console.log("Upload success:", response);
   } catch (err) {
     console.error("Upload failed:", err);
+    throw err;
   }
 };
