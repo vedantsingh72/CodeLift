@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3000/deploy";
-const STATUS_URL = process.env.REACT_APP_STATUS_URL || "http://localhost:3000/status";
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3004/deploy";
+const STATUS_URL = process.env.REACT_APP_STATUS_URL || "http://localhost:3004/status";
 const PREVIEW_URL = process.env.REACT_APP_PREVIEW_URL || "http://localhost:3001";
 
 const statusLabels = {
@@ -14,6 +14,10 @@ const statusLabels = {
   failed: "Failed"
 };
 
+function buildPreviewUrl(id) {
+  return `${PREVIEW_URL.replace(/\/$/, "")}/?id=${encodeURIComponent(id)}`;
+}
+
 function App() {
   const [repoUrl, setRepoUrl] = useState("");
   const [deployment, setDeployment] = useState(null);
@@ -23,7 +27,7 @@ function App() {
 
   const previewUrl = useMemo(() => {
     if (!deployment?.id) return "";
-    return `${PREVIEW_URL}/?id=${deployment.id}`;
+    return deployment.deploymentUrl || buildPreviewUrl(deployment.id);
   }, [deployment]);
 
   const canPreview = buildStatus === "deployed";
@@ -32,7 +36,7 @@ function App() {
   useEffect(() => {
     if (!deployment?.id || canPreview || buildStatus === "failed") return undefined;
 
-    const intervalId = window.setInterval(async () => {
+    const pollStatus = async () => {
       try {
         const response = await fetch(`${STATUS_URL}?id=${deployment.id}`);
         const data = await response.json();
@@ -40,10 +44,23 @@ function App() {
         if (data.status) {
           setBuildStatus(data.status);
         }
+
+        if (data.deploymentUrl) {
+          setDeployment((currentDeployment) => {
+            if (!currentDeployment) return currentDeployment;
+            return {
+              ...currentDeployment,
+              deploymentUrl: data.deploymentUrl
+            };
+          });
+        }
       } catch (err) {
         console.error("Failed to fetch deploy status:", err);
       }
-    }, 2500);
+    };
+
+    pollStatus();
+    const intervalId = window.setInterval(pollStatus, 2500);
 
     return () => window.clearInterval(intervalId);
   }, [buildStatus, canPreview, deployment]);
@@ -78,7 +95,10 @@ function App() {
         throw new Error(data.message || "Deployment failed.");
       }
 
-      setDeployment(data);
+      setDeployment({
+        ...data,
+        deploymentUrl: data.deploymentUrl || buildPreviewUrl(data.id)
+      });
       setBuildStatus("uploaded");
       setStatus("success");
     } catch (err) {
@@ -92,9 +112,9 @@ function App() {
       <section className="deploy-panel">
         <div className="panel-header">
           <p className="eyebrow">CodeLift</p>
-          <h1>Deploy a React repo</h1>
+          <h1>Deploy a frontend Project</h1>
           <p className="lede">
-            Upload a GitHub project, build it into static files, and preview the result from S3.
+            Upload a GitHub project, and get your deployed link.
           </p>
         </div>
 

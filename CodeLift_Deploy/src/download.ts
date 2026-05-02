@@ -1,6 +1,8 @@
 import pkg from "aws-sdk";
 import fs from "fs";
 import path from "path";
+import dotenv from "dotenv";
+dotenv.config();
 
 const { S3 } = pkg;
 
@@ -52,8 +54,13 @@ export async function downloadS3Folder(prefix: string, projectId = getProjectId(
       Contents.map(async ({ Key }) => {
         if (!Key) return;
 
-        // Remove prefix from path
-        const relativePath = Key.replace(activePrefix, "").replaceAll("\\", path.sep);
+        // Remove prefix and ensure path always remains relative on Windows/Linux.
+        const relativePath = Key
+          .replace(activePrefix, "")
+          .replaceAll("\\", "/")
+          .replace(/^\/+/, "")
+          .split("/")
+          .join(path.sep);
 
         const finalPath = path.join(baseDir, relativePath);
 

@@ -15,6 +15,8 @@ dotenv.config();
 
 const { S3 } = pkg;
 const redisUrl = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+const previewBaseUrl = process.env.PREVIEW_URL ?? "http://localhost:3001";
+const port = Number(process.env.PORT ?? 3004);
 const publisher = createClient({ url: redisUrl });
 const subscriber = createClient({ url: redisUrl });
 
@@ -34,6 +36,10 @@ const app = express();
 const git = simpleGit();
 app.use(cors());
 app.use(express.json());
+
+function getDeploymentUrl(id: string) {
+  return `${previewBaseUrl.replace(/\/$/, "")}/?id=${encodeURIComponent(id)}`;
+}
 
 
 
@@ -63,6 +69,7 @@ app.post("/deploy",async (req,res)=>{
   
     res.json({ 
         id : id,
+        deploymentUrl: getDeploymentUrl(id),
         message: "Repository cloned successfully",
      });
   } catch (err) {
@@ -78,9 +85,18 @@ app.post("/deploy",async (req,res)=>{
 
 app.get("/status",async (req , res)=>{
       const id=req.query.id;
+      if (typeof id !== "string" || !id) {
+        res.status(400).json({
+          status: "failed",
+          message: "Missing deployment id"
+        });
+        return;
+      }
+
       const response = await subscriber.hGet("status",String(id));
       res.json({
-         status:response
+         status:response,
+         deploymentUrl: response === "deployed" ? getDeploymentUrl(id) : null
       })
 })
 
@@ -89,8 +105,8 @@ const startServer = async () => {
     await publisher.connect();
     await subscriber.connect();
 
-    app.listen(3000, () => {
-      console.log("Server is running on port http://localhost:3000");
+    app.listen(port, () => {
+      console.log(`Server is running on port http://localhost:${port}`);
     });
   } catch (err) {
     console.error(`Could not connect to Redis at ${redisUrl}.`);

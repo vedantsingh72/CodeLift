@@ -1,6 +1,8 @@
 import express from "express";
 import pkg from "aws-sdk";
 import path from "path";
+import dotenv from "dotenv";
+dotenv.config();
 
 const { S3 } = pkg;
 
@@ -52,25 +54,66 @@ function getContentType(filePath: string) {
   return "application/octet-stream";
 }
 
-function getFilePath(requestPath: string) {
-  if (requestPath === "/" || requestPath === "") {
-    return "/index.html";
+function sanitizePath(requestPath: string) {
+  const decodedPath = decodeURIComponent(requestPath || "/");
+  const normalizedPath = path.posix.normalize(decodedPath);
+
+  // Block traversal and non-rooted paths
+  if (!normalizedPath.startsWith("/") || normalizedPath.includes("..")) {
+    return null;
   }
 
-  if (requestPath.endsWith("/")) {
-    return `${requestPath}index.html`;
+  return normalizedPath === "/" ? "/index.html" : normalizedPath;
+}
+
+function isS3MissingKeyError(err: unknown) {
+  if (!err || typeof err !== "object") {
+    return false;
   }
 
-  if (!path.posix.extname(requestPath)) {
-    return `${requestPath}/index.html`;
+  const code = "code" in err ? String((err as { code?: unknown }).code) : "";
+  const statusCode =
+    "statusCode" in err ? Number((err as { statusCode?: unknown }).statusCode) : null;
+  return code === "NoSuchKey" || statusCode === 404;
+}
+
+async function fetchObjectFromS3(key: string) {
+  return s3
+    .getObject({
+      Bucket: "VercelClone",
+      Key: key
+    })
+    .promise();
+}
+
+/**
+ * Vite often sets `base: '/Quiz/'`, so HTML requests `/Quiz/assets/...` while
+ * deploy copies `dist/` flat to `converted/{id}/assets/...`. If the primary
+ * key is missing, try without that one segment. Do not strip when the first
+ * segment is already a standard static root (`assets`, `_next`, `static`).
+ */
+function withoutLeadingBaseSegment(filePath: string): string | null {
+  const m = filePath.match(/^\/([^/]+)\/(.+)$/);
+  if (!m) return null;
+  const head = m[1];
+  if (head === "assets" || head === "_next" || head === "static") return null;
+  return `/${m[2]}`;
+}
+
+function candidateS3Keys(projectId: string, filePath: string): string[] {
+  const primary = `converted/${projectId}${filePath}`;
+  const keys = [primary];
+
+  const stripped = withoutLeadingBaseSegment(filePath);
+  if (stripped) {
+    keys.push(`converted/${projectId}${stripped}`);
   }
 
-  return requestPath;
+  return keys;
 }
 
 app.get(/.*/, async (req, res) => {
   try {
-    // id.100xdevs.com
     const id = getProjectId(req, res);
 
     if (!id) {
@@ -80,20 +123,41 @@ app.get(/.*/, async (req, res) => {
       return;
     }
 
-    const filePath = getFilePath(req.path);
-    const key = `converted/${id}${filePath}`;
+    const filePath = sanitizePath(req.path);
+    if (!filePath) {
+      res.status(404).send("Not found");
+      return;
+    }
 
-    console.log("Fetching S3 key:", key);
+    const keysToTry = candidateS3Keys(id, filePath);
+    console.log("Fetching S3 keys (in order):", keysToTry.join(", "));
 
-    const contents = await s3
-      .getObject({
-        Bucket: "VercelClone",
-        Key: key
-      })
-      .promise();
+    let lastErr: unknown;
+    for (const key of keysToTry) {
+      try {
+        const contents = await fetchObjectFromS3(key);
+        res.set("Content-Type", getContentType(filePath));
+        res.send(contents.Body);
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (!isS3MissingKeyError(err)) {
+          throw err;
+        }
+      }
+    }
 
-    res.set("Content-Type", getContentType(filePath));
-    res.send(contents.Body);
+    // For SPA routes (/about, /dashboard), fall back to index.html.
+    if (!path.posix.extname(filePath) && lastErr && isS3MissingKeyError(lastErr)) {
+      const fallbackKey = `converted/${id}/index.html`;
+      console.log("Falling back to:", fallbackKey);
+      const fallback = await fetchObjectFromS3(fallbackKey);
+      res.set("Content-Type", "text/html");
+      res.send(fallback.Body);
+      return;
+    }
+
+    throw lastErr;
   } catch (err) {
     console.error("Failed to fetch converted file:", err);
     res.status(404).send("Not found");
