@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:3004/deploy";
-const STATUS_URL = process.env.REACT_APP_STATUS_URL || "http://localhost:3004/status";
-const PREVIEW_URL = process.env.REACT_APP_PREVIEW_URL || "http://localhost:3001";
+const API_URL = process.env.REACT_APP_API_URL;
+const STATUS_URL = process.env.REACT_APP_STATUS_URL;
+const PREVIEW_URL = process.env.REACT_APP_PREVIEW_URL;
 
 const statusLabels = {
   uploaded: "Uploaded. Waiting for builder...",

@@ -17,6 +17,11 @@ const { S3 } = pkg;
 const redisUrl = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
 const previewBaseUrl = process.env.PREVIEW_URL ?? "http://localhost:3001";
 const port = Number(process.env.PORT ?? 3004);
+const rawAllowedOrigins = process.env.CORS_ORIGINS ?? "";
+const allowedOrigins = rawAllowedOrigins
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const publisher = createClient({ url: redisUrl });
 const subscriber = createClient({ url: redisUrl });
 
@@ -34,7 +39,32 @@ const __dirname = path.dirname(__filename);
 const s3 = new S3();
 const app = express();
 const git = simpleGit();
-app.use(cors());
+
+const corsOptions: cors.CorsOptions = {
+  origin(origin, callback) {
+    // Allow server-to-server and curl requests that have no Origin header.
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    // If no allowlist is configured, keep development permissive.
+    if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`Origin ${origin} is not allowed by CORS`));
+  },
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+app.options("/deploy", cors(corsOptions));
+app.options("/status", cors(corsOptions));
 app.use(express.json());
 
 function getDeploymentUrl(id: string) {
