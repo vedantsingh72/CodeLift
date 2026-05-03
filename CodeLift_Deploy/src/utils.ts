@@ -179,8 +179,8 @@ export async function buildProject(id: string) {
       ensureNextStaticExport(reactProjectDir);
     }
 
-    console.log("Installing React app dependencies in:", reactProjectDir);
-    await runCommand("npm install --no-audit --no-fund", reactProjectDir);
+    console.log("Installing React app dependencies (including devDependencies) in:", reactProjectDir);
+    await runCommand("npm install --include=dev --no-audit --no-fund", reactProjectDir);
 
     console.log("Converting React app to static HTML, CSS, and JS in:", reactProjectDir);
     await runCommand("npm run build", reactProjectDir);
