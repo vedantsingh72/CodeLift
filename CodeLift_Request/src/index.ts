@@ -26,12 +26,6 @@ function getCookie(cookieHeader: string | undefined, name: string) {
 }
 
 function getProjectId(req: express.Request, res: express.Response) {
-  const hostId = req.hostname.split(".")[0];
-
-  if (hostId !== "localhost" && hostId !== "127") {
-    return hostId;
-  }
-
   const queryId = typeof req.query.id === "string" ? req.query.id : null;
 
   if (queryId) {
@@ -39,7 +33,21 @@ function getProjectId(req: express.Request, res: express.Response) {
     return queryId;
   }
 
-  return getCookie(req.headers.cookie, "projectId") ?? process.env.PROJECT_ID ?? null;
+  const cookieId = getCookie(req.headers.cookie, "projectId");
+  if (cookieId) {
+    return cookieId;
+  }
+
+  // Only use host-derived id for real wildcard-subdomain setups.
+  // On Render hosts like "<service>.onrender.com", this would be incorrect.
+  const hostId = req.hostname.split(".")[0];
+  const isLocalHost = hostId === "localhost" || hostId === "127";
+  const isRenderServiceHost = req.hostname.endsWith(".onrender.com");
+  if (!isLocalHost && !isRenderServiceHost) {
+    return hostId;
+  }
+
+  return process.env.PROJECT_ID ?? null;
 }
 
 function getContentType(filePath: string) {
